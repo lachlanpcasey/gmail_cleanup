@@ -8,6 +8,7 @@ from .models import User
 
 logger = logging.getLogger(__name__)
 
+
 def is_safe_https_url(url: str) -> bool:
     try:
         parsed = urlparse(url)
@@ -19,6 +20,7 @@ def is_safe_https_url(url: str) -> bool:
         return True
     except Exception:
         return False
+
 
 async def try_https_unsubscribe(url: str, timeout=10):
     if not is_safe_https_url(url):
@@ -32,6 +34,7 @@ async def try_https_unsubscribe(url: str, timeout=10):
         logger.exception("HTTPS unsubscribe request failed")
         return {"ok": False, "reason": "network", "error": str(e)}
 
+
 def format_mailto_unsubscribe(mailto: str) -> dict:
     # mailto:unsubscribe@example.com?subject=unsubscribe
     return {"mailto": mailto}
@@ -44,7 +47,8 @@ async def _execute_with_service(service, group_domain: str, methods: dict):
     # Prefer HTTPS endpoints
     for url in methods.get("https", []):
         if not is_safe_https_url(url):
-            results["actions"].append({"method": "https", "url": url, "ok": False, "reason": "unsafe_url"})
+            results["actions"].append(
+                {"method": "https", "url": url, "ok": False, "reason": "unsafe_url"})
             continue
         res = await try_https_unsubscribe(url)
         results["actions"].append({"method": "https", "url": url, **res})
@@ -63,13 +67,16 @@ async def _execute_with_service(service, group_domain: str, methods: dict):
             body = {"raw": raw}
             try:
                 send_resp = service.users().messages().send(userId="me", body=body).execute()
-                results["actions"].append({"method": "mailto", "mailto": m, "ok": True, "sendResponseId": send_resp.get("id")})
+                results["actions"].append(
+                    {"method": "mailto", "mailto": m, "ok": True, "sendResponseId": send_resp.get("id")})
                 return results
             except HttpError as he:
                 status = int(getattr(he, 'status_code', 0) or 0)
-                results["actions"].append({"method": "mailto", "mailto": m, "ok": False, "reason": f"google_api_error_{status}"})
+                results["actions"].append(
+                    {"method": "mailto", "mailto": m, "ok": False, "reason": f"google_api_error_{status}"})
         except Exception as e:
-            results["actions"].append({"method": "mailto", "mailto": m, "ok": False, "reason": str(e)})
+            results["actions"].append(
+                {"method": "mailto", "mailto": m, "ok": False, "reason": str(e)})
 
     # Fallback: create a Gmail filter to archive/delete future messages from this domain
     try:
@@ -78,12 +85,15 @@ async def _execute_with_service(service, group_domain: str, methods: dict):
         fb = {"criteria": criteria, "action": action}
         try:
             fresp = service.users().settings().filters().create(userId="me", body=fb).execute()
-            results["actions"].append({"method": "filter_create", "ok": True, "filterId": fresp.get("id")})
+            results["actions"].append(
+                {"method": "filter_create", "ok": True, "filterId": fresp.get("id")})
         except HttpError as he:
             status = int(getattr(he, 'status_code', 0) or 0)
-            results["actions"].append({"method": "filter_create", "ok": False, "reason": f"google_api_error_{status}"})
+            results["actions"].append(
+                {"method": "filter_create", "ok": False, "reason": f"google_api_error_{status}"})
     except Exception as e:
-        results["actions"].append({"method": "filter_create", "ok": False, "reason": str(e)})
+        results["actions"].append(
+            {"method": "filter_create", "ok": False, "reason": str(e)})
 
     return results
 
@@ -103,14 +113,16 @@ async def execute_unsubscribe_task(user_id: int, group_domain: str, methods: dic
         try:
             token_dict = refresh_and_persist_tokens(user, db)
         except Exception as e:
-            logger.exception("Failed to refresh tokens for unsubscribe task: %s", e)
+            logger.exception(
+                "Failed to refresh tokens for unsubscribe task: %s", e)
             return {"ok": False, "reason": "token_refresh_failed", "detail": str(e)}
 
         # Build service using refreshed tokens
         try:
             service = build_gmail_service(token_dict)
         except Exception as e:
-            logger.exception("Failed to build Gmail service for unsubscribe task: %s", e)
+            logger.exception(
+                "Failed to build Gmail service for unsubscribe task: %s", e)
             return {"ok": False, "reason": "service_build_failed", "detail": str(e)}
 
         # Execute core flow
@@ -119,8 +131,8 @@ async def execute_unsubscribe_task(user_id: int, group_domain: str, methods: dic
             logger.info("unsubscribe result for %s: %s", group_domain, res)
             return {"ok": True, "result": res}
         except Exception as e:
-            logger.exception("unsubscribe execution failed for %s: %s", group_domain, e)
+            logger.exception(
+                "unsubscribe execution failed for %s: %s", group_domain, e)
             return {"ok": False, "reason": "execution_failed", "detail": str(e)}
     finally:
         db.close()
-

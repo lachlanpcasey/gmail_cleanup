@@ -8,7 +8,8 @@ import re
 
 logger = logging.getLogger(__name__)
 
-UNSUB_KEYWORDS = ["unsubscribe", "manage preferences", "opt out", "manage subscription", "preferences"]
+UNSUB_KEYWORDS = ["unsubscribe", "manage preferences",
+                  "opt out", "manage subscription", "preferences"]
 
 
 def header_dict_from_headers(headers):
@@ -54,18 +55,22 @@ def scan_user_mailbox(user_id: int):
 
         page_token = None
         processed_threads = set()
-        groups = defaultdict(lambda: {"count": 0, "subjects": set(), "sender_name": None, "has_list_unsub": False, "methods": []})
+        groups = defaultdict(lambda: {"count": 0, "subjects": set(
+        ), "sender_name": None, "has_list_unsub": False, "methods": []})
 
         # Paginate messages to limit work per run
         while True:
-            resp = service.users().messages().list(userId="me", q="in:anywhere", pageToken=page_token, maxResults=200).execute()
+            resp = service.users().messages().list(userId="me", q="in:anywhere",
+                                                   pageToken=page_token, maxResults=200).execute()
             msgs = resp.get("messages", [])
             for m in msgs:
                 try:
-                    msg = service.users().messages().get(userId="me", id=m["id"], format="metadata", metadataHeaders=["From", "Subject", "List-Unsubscribe", "Precedence", "Auto-Submitted"]).execute()
+                    msg = service.users().messages().get(userId="me", id=m["id"], format="metadata", metadataHeaders=[
+                        "From", "Subject", "List-Unsubscribe", "Precedence", "Auto-Submitted"]).execute()
                     headers = msg.get("payload", {}).get("headers", [])
                     hdrs = header_dict_from_headers(headers)
-                    from_name, from_email = extract_from_header_value(hdrs.get("from"))
+                    from_name, from_email = extract_from_header_value(
+                        hdrs.get("from"))
                     domain = group_key_from_email(from_email)
                     thread_id = msg.get("threadId")
                     if thread_id in processed_threads:
@@ -73,7 +78,8 @@ def scan_user_mailbox(user_id: int):
                     processed_threads.add(thread_id)
 
                     methods = parse_list_unsubscribe(headers)
-                    has_list_unsub = bool(methods.get("mailto") or methods.get("https"))
+                    has_list_unsub = bool(methods.get(
+                        "mailto") or methods.get("https"))
 
                     heuristics_count = 0
                     subj = hdrs.get("subject", "")
@@ -99,15 +105,19 @@ def scan_user_mailbox(user_id: int):
                     # persist message record for traceability if detected
                     if has_list_unsub or heuristics_count > 0:
                         # create or find group row
-                        sgroup = db.query(SubscriptionGroup).filter(SubscriptionGroup.user_id == user.id, SubscriptionGroup.sender_domain == domain).first()
+                        sgroup = db.query(SubscriptionGroup).filter(
+                            SubscriptionGroup.user_id == user.id, SubscriptionGroup.sender_domain == domain).first()
                         if not sgroup:
-                            sgroup = SubscriptionGroup(user_id=user.id, sender_domain=domain, sender_name=from_name, frequency_score=0, confidence_score=0, example_subjects=list(grp["subjects"]))
+                            sgroup = SubscriptionGroup(user_id=user.id, sender_domain=domain, sender_name=from_name,
+                                                       frequency_score=0, confidence_score=0, example_subjects=list(grp["subjects"]))
                             db.add(sgroup)
                             db.flush()
                         else:
-                            sgroup.example_subjects = list((set(sgroup.example_subjects or []) | grp["subjects"]))
+                            sgroup.example_subjects = list(
+                                (set(sgroup.example_subjects or []) | grp["subjects"]))
 
-                        sm = SubscriptionMessage(group_id=sgroup.id, gmail_thread_id=thread_id, unsubscribe_methods=methods, detected_headers=hdrs)
+                        sm = SubscriptionMessage(
+                            group_id=sgroup.id, gmail_thread_id=thread_id, unsubscribe_methods=methods, detected_headers=hdrs)
                         db.add(sm)
                         db.commit()
 
@@ -121,11 +131,13 @@ def scan_user_mailbox(user_id: int):
 
         # finalize groups into DB: update frequency/confidence
         for domain, d in groups.items():
-            sgroup = db.query(SubscriptionGroup).filter(SubscriptionGroup.user_id == user.id, SubscriptionGroup.sender_domain == domain).first()
+            sgroup = db.query(SubscriptionGroup).filter(
+                SubscriptionGroup.user_id == user.id, SubscriptionGroup.sender_domain == domain).first()
             if not sgroup:
                 continue
             sgroup.frequency_score = d["count"]
-            sgroup.confidence_score = compute_confidence(d["has_list_unsub"], len(d["subjects"]))
+            sgroup.confidence_score = compute_confidence(
+                d["has_list_unsub"], len(d["subjects"]))
             sgroup.example_subjects = list(d["subjects"])[:5]
             db.add(sgroup)
         db.commit()

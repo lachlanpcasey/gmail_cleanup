@@ -8,7 +8,8 @@ def test_is_safe_https_url():
     assert is_safe_https_url("https://example.com/unsub")
     assert not is_safe_https_url("http://example.com/unsub")
     assert not is_safe_https_url("javascript:alert(1)")
-    assert not is_safe_https_url("https://example.com/unsub?redirect=http://evil.com")
+    assert not is_safe_https_url(
+        "https://example.com/unsub?redirect=http://evil.com")
 
 
 @pytest.mark.asyncio
@@ -28,7 +29,8 @@ async def test_try_https_unsubscribe_monkeypatch(monkeypatch):
         async def get(self, url):
             return FakeResp()
 
-    monkeypatch.setattr('app.unsubscribe.httpx.AsyncClient', lambda **kwargs: FakeClient())
+    monkeypatch.setattr('app.unsubscribe.httpx.AsyncClient',
+                        lambda **kwargs: FakeClient())
     res = await try_https_unsubscribe('https://example.com/unsub')
     assert res.get('ok') is True
 
@@ -38,5 +40,6 @@ def test_execute_unsubscribe_task_no_user(monkeypatch):
     import asyncio
     from app.unsubscribe import execute_unsubscribe_task
 
-    res = asyncio.get_event_loop().run_until_complete(execute_unsubscribe_task(999999, 'example.com', {"https": [], "mailto": []}))
+    res = asyncio.get_event_loop().run_until_complete(
+        execute_unsubscribe_task(999999, 'example.com', {"https": [], "mailto": []}))
     assert res.get('ok') is False and res.get('reason') == 'user_not_found'

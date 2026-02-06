@@ -9,11 +9,13 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+
 def run_module(module_path):
     spec = importlib.util.spec_from_file_location("testmod", module_path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
 
 def run_tests_in_module(mod):
     failures = 0
@@ -31,6 +33,7 @@ def run_tests_in_module(mod):
                 print(f"FAIL {mod.__name__}.{name}: {e}")
     return failures
 
+
 def main():
     tests = [
         "test_unsubscribe_header_parser.py",
@@ -45,6 +48,7 @@ def main():
         print(f"{total_fail} test(s) failed")
         sys.exit(1)
     print("All tests passed")
+
 
 if __name__ == '__main__':
     main()

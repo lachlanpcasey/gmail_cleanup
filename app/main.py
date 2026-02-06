@@ -13,9 +13,11 @@ import uvicorn
 load_dotenv()
 
 app = FastAPI()
-templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "..", "templates"))
+templates = Jinja2Templates(directory=os.path.join(
+    os.path.dirname(__file__), "..", "templates"))
 
-app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SESSION_SECRET") or "dev-secret", https_only=True)
+app.add_middleware(SessionMiddleware, secret_key=os.environ.get(
+    "SESSION_SECRET") or "dev-secret", https_only=True)
 
 
 def get_db():
@@ -40,7 +42,8 @@ def index(request: Request):
 @app.get("/login")
 def login(request: Request):
     flow = auth.make_flow(request)
-    auth_url, state = flow.authorization_url(access_type="offline", include_granted_scopes=True, prompt="consent")
+    auth_url, state = flow.authorization_url(
+        access_type="offline", include_granted_scopes=True, prompt="consent")
     request.session["oauth_state"] = state
     return RedirectResponse(auth_url)
 
@@ -56,7 +59,8 @@ def oauth2callback(request: Request, db: Session = Depends(get_db)):
     if creds.id_token:
         import jwt
         try:
-            info = jwt.decode(creds.id_token, options={"verify_signature": False})
+            info = jwt.decode(creds.id_token, options={
+                              "verify_signature": False})
             email = info.get("email")
         except Exception:
             email = None
@@ -96,7 +100,8 @@ def subscriptions(request: Request, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == user_sess.get("email")).first()
     groups = []
     if user:
-        groups = db.query(SubscriptionGroup).filter(SubscriptionGroup.user_id == user.id).order_by(SubscriptionGroup.confidence_score.desc()).all()
+        groups = db.query(SubscriptionGroup).filter(SubscriptionGroup.user_id == user.id).order_by(
+            SubscriptionGroup.confidence_score.desc()).all()
     return templates.TemplateResponse("subscriptions.html", {"request": request, "groups": groups})
 
 
@@ -113,13 +118,15 @@ async def execute_unsubscribe(request: Request, background: BackgroundTasks, db:
         return {"ok": False, "error": "user_not_found"}
 
     # Validate ownership of group ids
-    valid_groups = db.query(SubscriptionGroup).filter(SubscriptionGroup.user_id == user.id, SubscriptionGroup.id.in_(group_ids)).all()
+    valid_groups = db.query(SubscriptionGroup).filter(
+        SubscriptionGroup.user_id == user.id, SubscriptionGroup.id.in_(group_ids)).all()
     if not valid_groups:
         return {"ok": False, "error": "no_valid_groups"}
 
     # Decrypt tokens
     from .auth import decrypt_tokens
-    token_dict = decrypt_tokens(user.encrypted_tokens) if user.encrypted_tokens else {}
+    token_dict = decrypt_tokens(
+        user.encrypted_tokens) if user.encrypted_tokens else {}
     service = None
     try:
         service = gmail_client.build_gmail_service(token_dict)
@@ -129,7 +136,8 @@ async def execute_unsubscribe(request: Request, background: BackgroundTasks, db:
     results = []
     for g in valid_groups:
         # aggregate methods from recent messages
-        msgs = db.query(SubscriptionMessage).filter(SubscriptionMessage.group_id == g.id).limit(10).all()
+        msgs = db.query(SubscriptionMessage).filter(
+            SubscriptionMessage.group_id == g.id).limit(10).all()
         agg_methods = {"mailto": [], "https": []}
         for m in msgs:
             um = m.unsubscribe_methods or {}
@@ -137,8 +145,10 @@ async def execute_unsubscribe(request: Request, background: BackgroundTasks, db:
                 agg_methods[k].extend(um.get(k, []))
 
         # schedule execution in background: pass user id so tokens can be refreshed/persisted inside task
-        background.add_task(unsubscribe.execute_unsubscribe_task, user.id, g.sender_domain, agg_methods)
-        results.append({"group_id": g.id, "domain": g.sender_domain, "status": "queued"})
+        background.add_task(unsubscribe.execute_unsubscribe_task,
+                            user.id, g.sender_domain, agg_methods)
+        results.append(
+            {"group_id": g.id, "domain": g.sender_domain, "status": "queued"})
 
     return {"ok": True, "results": results}
 
@@ -157,4 +167,5 @@ def start_scan(request: Request, background: BackgroundTasks, db: Session = Depe
 
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=int(
+        os.environ.get("PORT", 8000)), reload=True)
