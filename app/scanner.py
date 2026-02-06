@@ -1,5 +1,5 @@
 import logging
-from .gmail_client import build_gmail_service, parse_list_unsubscribe
+from .gmail_client import build_gmail_service, parse_list_unsubscribe, execute_request
 from .models import User, SubscriptionGroup, SubscriptionMessage
 from .db import SessionLocal
 from sqlalchemy.orm import Session
@@ -60,13 +60,11 @@ def scan_user_mailbox(user_id: int):
 
         # Paginate messages to limit work per run
         while True:
-            resp = service.users().messages().list(userId="me", q="in:anywhere",
-                                                   pageToken=page_token, maxResults=200).execute()
+            resp = execute_request(lambda: service.users().messages().list(userId="me", q="in:anywhere", pageToken=page_token, maxResults=200).execute())
             msgs = resp.get("messages", [])
             for m in msgs:
                 try:
-                    msg = service.users().messages().get(userId="me", id=m["id"], format="metadata", metadataHeaders=[
-                        "From", "Subject", "List-Unsubscribe", "Precedence", "Auto-Submitted"]).execute()
+                    msg = execute_request(lambda: service.users().messages().get(userId="me", id=m["id"], format="metadata", metadataHeaders=["From", "Subject", "List-Unsubscribe", "Precedence", "Auto-Submitted"]).execute())
                     headers = msg.get("payload", {}).get("headers", [])
                     hdrs = header_dict_from_headers(headers)
                     from_name, from_email = extract_from_header_value(
