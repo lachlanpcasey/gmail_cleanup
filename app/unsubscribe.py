@@ -68,8 +68,10 @@ async def _execute_with_service(service, group_domain: str, methods: dict):
             body = {"raw": raw}
             try:
                 from .gmail_client import execute_request
-                send_resp = execute_request(lambda: service.users().messages().send(userId="me", body=body).execute())
-                results["actions"].append({"method": "mailto", "mailto": m, "ok": True, "sendResponseId": send_resp.get("id")})
+                send_resp = execute_request(lambda: service.users(
+                ).messages().send(userId="me", body=body).execute())
+                results["actions"].append(
+                    {"method": "mailto", "mailto": m, "ok": True, "sendResponseId": send_resp.get("id")})
                 return results
             except HttpError as he:
                 status = None
@@ -77,7 +79,8 @@ async def _execute_with_service(service, group_domain: str, methods: dict):
                     status = int(getattr(he, 'resp', None).status)
                 except Exception:
                     status = int(getattr(he, 'status_code', 0) or 0)
-                results["actions"].append({"method": "mailto", "mailto": m, "ok": False, "reason": f"google_api_error_{status}"})
+                results["actions"].append(
+                    {"method": "mailto", "mailto": m, "ok": False, "reason": f"google_api_error_{status}"})
         except Exception as e:
             results["actions"].append(
                 {"method": "mailto", "mailto": m, "ok": False, "reason": str(e)})
@@ -89,15 +92,18 @@ async def _execute_with_service(service, group_domain: str, methods: dict):
         fb = {"criteria": criteria, "action": action}
         try:
             from .gmail_client import execute_request
-            fresp = execute_request(lambda: service.users().settings().filters().create(userId="me", body=fb).execute())
-            results["actions"].append({"method": "filter_create", "ok": True, "filterId": fresp.get("id")})
+            fresp = execute_request(lambda: service.users().settings(
+            ).filters().create(userId="me", body=fb).execute())
+            results["actions"].append(
+                {"method": "filter_create", "ok": True, "filterId": fresp.get("id")})
         except HttpError as he:
             status = None
             try:
                 status = int(getattr(he, 'resp', None).status)
             except Exception:
                 status = int(getattr(he, 'status_code', 0) or 0)
-            results["actions"].append({"method": "filter_create", "ok": False, "reason": f"google_api_error_{status}"})
+            results["actions"].append(
+                {"method": "filter_create", "ok": False, "reason": f"google_api_error_{status}"})
     except Exception as e:
         results["actions"].append(
             {"method": "filter_create", "ok": False, "reason": str(e)})
@@ -116,9 +122,11 @@ async def execute_unsubscribe_task(user_id: int, group_domain: str, methods: dic
             # Handle missing-table during tests / fresh DB: treat as user not found
             msg = str(e).lower()
             if "no such table" in msg:
-                logger.warning("unsubscribe task: users table missing, treat as no user")
+                logger.warning(
+                    "unsubscribe task: users table missing, treat as no user")
                 return {"ok": False, "reason": "user_not_found"}
-            logger.exception("Database operational error when fetching user %s: %s", user_id, e)
+            logger.exception(
+                "Database operational error when fetching user %s: %s", user_id, e)
             return {"ok": False, "reason": "db_error", "detail": str(e)}
 
         if not user:

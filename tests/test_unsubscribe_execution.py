@@ -8,7 +8,8 @@ def test_is_safe_https_url():
     assert is_safe_https_url("https://example.com/unsub")
     assert not is_safe_https_url("http://example.com/unsub")
     assert not is_safe_https_url("javascript:alert(1)")
-    assert not is_safe_https_url("https://example.com/unsub?redirect=http://evil.com")
+    assert not is_safe_https_url(
+        "https://example.com/unsub?redirect=http://evil.com")
 
 
 @pytest.mark.asyncio

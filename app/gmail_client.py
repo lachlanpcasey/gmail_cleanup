@@ -34,8 +34,10 @@ def execute_request(func, max_retries: int = 3, backoff_factor: float = 1.0):
 
             # Retry on rate limit or server errors
             if status in (429, 500, 502, 503, 504) and attempt < max_retries:
-                sleep = backoff_factor * (2 ** attempt) + random.uniform(0, 0.5)
-                logger.warning("Transient Gmail API error %s, retrying after %.2fs (attempt %d)", status, sleep, attempt + 1)
+                sleep = backoff_factor * \
+                    (2 ** attempt) + random.uniform(0, 0.5)
+                logger.warning(
+                    "Transient Gmail API error %s, retrying after %.2fs (attempt %d)", status, sleep, attempt + 1)
                 time.sleep(sleep)
                 attempt += 1
                 continue
