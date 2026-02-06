@@ -1,0 +1,12 @@
+fastapi==0.95.2
+uvicorn[standard]==0.22.0
+Jinja2==3.1.2
+python-dotenv==1.0.0
+SQLAlchemy==2.0.16
+google-auth==2.22.0
+google-auth-oauthlib==1.0.0
+google-api-python-client==2.93.0
+cryptography==41.0.3
+httpx==0.24.1
+pytest==7.4.2
+pytest-asyncio==0.21.0
