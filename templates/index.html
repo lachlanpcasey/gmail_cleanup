@@ -8,11 +8,13 @@
   <body>
     <h1>Gmail Cleanup</h1>
     {% if user %}
-      <p>Signed in as {{ user.email }}</p>
-      <a href="/subscriptions">View Subscriptions</a>
-      <form action="/logout" method="get"><button type="submit">Logout</button></form>
+    <p>Signed in as {{ user.email }}</p>
+    <a href="/subscriptions">View Subscriptions</a>
+    <form action="/logout" method="get">
+      <button type="submit">Logout</button>
+    </form>
     {% else %}
-      <a href="/login">Sign in with Google</a>
+    <a href="/login">Sign in with Google</a>
     {% endif %}
   </body>
 </html>

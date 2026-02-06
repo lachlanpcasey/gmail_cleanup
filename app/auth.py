@@ -19,9 +19,11 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
 ]
 
+
 def encrypt_tokens(token_dict: dict) -> str:
     raw = json.dumps(token_dict).encode()
     return fernet.encrypt(raw).decode()
+
 
 def decrypt_tokens(ciphertext: str) -> dict:
     try:
@@ -29,6 +31,7 @@ def decrypt_tokens(ciphertext: str) -> dict:
         return json.loads(raw.decode())
     except InvalidToken:
         return {}
+
 
 def make_flow(request: Request):
     client_config = {
@@ -39,8 +42,10 @@ def make_flow(request: Request):
             "token_uri": "https://oauth2.googleapis.com/token",
         }
     }
-    flow = Flow.from_client_config(client_config=client_config, scopes=SCOPES, redirect_uri=os.environ.get("OAUTH_REDIRECT_URI"))
+    flow = Flow.from_client_config(
+        client_config=client_config, scopes=SCOPES, redirect_uri=os.environ.get("OAUTH_REDIRECT_URI"))
     return flow
+
 
 def credentials_from_tokens(token_dict: dict) -> Credentials:
     return Credentials(
@@ -69,12 +74,14 @@ def refresh_and_persist_tokens(user, db_session):
             request = GoogleAuthRequest()
             creds.refresh(request)
             # persist updated tokens
-            new_tokens = {"token": creds.token, "refresh_token": creds.refresh_token, "id_token": creds.id_token}
+            new_tokens = {"token": creds.token,
+                          "refresh_token": creds.refresh_token, "id_token": creds.id_token}
             user.encrypted_tokens = encrypt_tokens(new_tokens)
             db_session.add(user)
             db_session.commit()
             return new_tokens
         return tokens
     except Exception as e:
-        logger.exception("Failed to refresh tokens for user %s: %s", getattr(user, 'email', None), e)
+        logger.exception("Failed to refresh tokens for user %s: %s",
+                         getattr(user, 'email', None), e)
         raise

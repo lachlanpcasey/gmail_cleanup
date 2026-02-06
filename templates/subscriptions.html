@@ -8,30 +8,46 @@
   <body>
     <h1>Detected Subscriptions</h1>
     {% if groups %}
-      <form id="unsubscribe-form">
+    <form id="unsubscribe-form">
       {% for g in groups %}
+      <div>
+        <input type="checkbox" name="group_ids" value="{{ g.id }}" />
+        <strong>{{ g.sender_name or g.sender_domain }}</strong>
         <div>
-          <input type="checkbox" name="group_ids" value="{{ g.id }}"> <strong>{{ g.sender_name or g.sender_domain }}</strong>
-          <div>Confidence: {{ g.confidence_score }} — Frequency: {{ g.frequency_score }}</div>
-          <div>Examples: {{ g.example_subjects|join(', ') }}</div>
+          Confidence: {{ g.confidence_score }} — Frequency: {{ g.frequency_score
+          }}
         </div>
+        <div>Examples: {{ g.example_subjects|join(', ') }}</div>
+      </div>
       {% endfor %}
-      <button type="button" onclick="submitUnsubscribe()">Unsubscribe Selected</button>
-      </form>
-      <script>
-        async function submitUnsubscribe(){
-          const form = document.getElementById('unsubscribe-form');
-          const data = Array.from(form.querySelectorAll('input[name="group_ids"]:checked')).map(n=>parseInt(n.value));
-          if(!data.length){ alert('No selections'); return; }
-          if(!confirm('Are you sure you want to unsubscribe selected items?')) return;
-          const resp = await fetch('/execute_unsubscribe', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({groups: data})});
-          const j = await resp.json();
-          alert(JSON.stringify(j));
-          window.location.reload();
+      <button type="button" onclick="submitUnsubscribe()">
+        Unsubscribe Selected
+      </button>
+    </form>
+    <script>
+      async function submitUnsubscribe() {
+        const form = document.getElementById("unsubscribe-form");
+        const data = Array.from(
+          form.querySelectorAll('input[name="group_ids"]:checked'),
+        ).map((n) => parseInt(n.value));
+        if (!data.length) {
+          alert("No selections");
+          return;
         }
-      </script>
+        if (!confirm("Are you sure you want to unsubscribe selected items?"))
+          return;
+        const resp = await fetch("/execute_unsubscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ groups: data }),
+        });
+        const j = await resp.json();
+        alert(JSON.stringify(j));
+        window.location.reload();
+      }
+    </script>
     {% else %}
-      <p>No subscriptions detected yet. Scan mailbox to detect subscriptions.</p>
+    <p>No subscriptions detected yet. Scan mailbox to detect subscriptions.</p>
     {% endif %}
     <p><a href="/">Back</a></p>
   </body>

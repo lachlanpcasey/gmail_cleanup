@@ -5,9 +5,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def build_gmail_service(token_dict: dict):
     creds = credentials_from_tokens(token_dict)
     return build("gmail", "v1", credentials=creds, cache_discovery=False)
+
 
 def list_threads(service, user_id="me", q=None, page_token=None, max_results=100):
     try:
@@ -16,12 +18,14 @@ def list_threads(service, user_id="me", q=None, page_token=None, max_results=100
         logger.exception("Gmail API error listing threads")
         raise
 
+
 def get_thread(service, thread_id, user_id="me"):
     try:
         return service.users().threads().get(userId=user_id, id=thread_id, format="full").execute()
     except HttpError as e:
         logger.exception("Gmail API error fetching thread %s", thread_id)
         raise
+
 
 def parse_list_unsubscribe(headers):
     """Parse List-Unsubscribe headers, return dict with https/mailto if present."""
