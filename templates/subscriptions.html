@@ -27,27 +27,78 @@
     <script>
       async function submitUnsubscribe() {
         const form = document.getElementById("unsubscribe-form");
-        const data = Array.from(
+        const checkboxes = Array.from(
           form.querySelectorAll('input[name="group_ids"]:checked'),
-        ).map((n) => parseInt(n.value));
+        );
+        const data = checkboxes.map((n) => parseInt(n.value));
+
         if (!data.length) {
-          alert("No selections");
+          alert("Please select at least one subscription to unsubscribe.");
           return;
         }
-        if (!confirm("Are you sure you want to unsubscribe selected items?"))
+
+        if (
+          !confirm(
+            `Are you sure you want to unsubscribe from ${data.length} subscription(s)?`,
+          )
+        ) {
           return;
-        const resp = await fetch("/execute_unsubscribe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ groups: data }),
-        });
-        const j = await resp.json();
-        alert(JSON.stringify(j));
-        window.location.reload();
+        }
+
+        // Disable button and show loading state
+        const btn = event.target;
+        btn.disabled = true;
+        btn.textContent = "Processing...";
+
+        try {
+          const resp = await fetch("/execute_unsubscribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ groups: data }),
+          });
+          const j = await resp.json();
+
+          // Show user-friendly message
+          if (j.ok) {
+            alert(
+              `✓ Unsubscribe request sent for ${data.length} subscription(s).\n\nNote: This is processed in the background. Refresh the page in a few seconds to see updated list.`,
+            );
+            // Remove the selected items from UI immediately
+            checkboxes.forEach((cb) => {
+              const div = cb.closest("div");
+              if (div) div.remove();
+            });
+          } else {
+            alert(`✗ Error: ${j.error || "Unknown error occurred"}`);
+          }
+        } catch (err) {
+          alert(`✗ Network error: ${err.message}`);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Unsubscribe Selected";
+        }
       }
     </script>
     {% else %}
     <p>No subscriptions detected yet. Scan mailbox to detect subscriptions.</p>
+    <button onclick="startScan()">Scan Mailbox</button>
+    <script>
+      async function startScan() {
+        if (
+          !confirm(
+            "Start scanning your mailbox for subscriptions? This may take a few minutes.",
+          )
+        )
+          return;
+        const resp = await fetch("/start_scan", { method: "POST" });
+        const j = await resp.json();
+        if (j.ok) {
+          alert("Scan started! Check back in a few minutes.");
+        } else {
+          alert("Error: " + (j.error || "Unknown error"));
+        }
+      }
+    </script>
     {% endif %}
     <p><a href="/">Back</a></p>
   </body>

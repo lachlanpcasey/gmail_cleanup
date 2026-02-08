@@ -6,18 +6,26 @@ from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
 from .db import init_db, SessionLocal
 from . import auth, gmail_client, unsubscribe, scanner
-from .models import User
+from .models import User, SubscriptionGroup, SubscriptionMessage
 from sqlalchemy.orm import Session
 import uvicorn
+import logging
+
+# Configure logging to print all logs to the console
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s %(levelname)s %(name)s: %(message)s')
 
 load_dotenv()
+
+# Allow OAuth over HTTP for local development (DO NOT use in production)
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 app = FastAPI()
 templates = Jinja2Templates(directory=os.path.join(
     os.path.dirname(__file__), "..", "templates"))
 
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get(
-    "SESSION_SECRET") or "dev-secret", https_only=True)
+    "SESSION_SECRET") or "dev-secret", https_only=False)
 
 
 def get_db():
@@ -43,46 +51,93 @@ def index(request: Request):
 def login(request: Request):
     flow = auth.make_flow(request)
     auth_url, state = flow.authorization_url(
-        access_type="offline", include_granted_scopes=True, prompt="consent")
+        access_type="offline", include_granted_scopes="true", prompt="consent")
     request.session["oauth_state"] = state
     return RedirectResponse(auth_url)
 
 
 @app.get("/oauth2callback")
-def oauth2callback(request: Request, db: Session = Depends(get_db)):
-    state = request.session.get("oauth_state")
-    flow = auth.make_flow(request)
-    flow.fetch_token(authorization_response=str(request.url))
-    creds = flow.credentials
-    # minimal userinfo: email from id_token if present
-    email = None
-    if creds.id_token:
-        import jwt
-        try:
-            info = jwt.decode(creds.id_token, options={
-                              "verify_signature": False})
-            email = info.get("email")
-        except Exception:
-            email = None
-    if not email:
-        email = "unknown"
+async def oauth2callback(request: Request, db: Session = Depends(get_db)):
+    import logging
+    import sys
+    logger = logging.getLogger("gmail_cleanup.oauth2callback")
 
-    encrypted = auth.encrypt_tokens({
-        "token": creds.token,
-        "refresh_token": creds.refresh_token,
-        "id_token": creds.id_token,
-    })
+    # Log that we received the callback
+    print(f"=== CALLBACK RECEIVED === URL: {request.url}", flush=True)
+    logger.info(f"OAuth2 callback received: {request.url}")
 
-    # upsert user
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        user = User(email=email, encrypted_tokens=encrypted)
-        db.add(user)
-    else:
-        user.encrypted_tokens = encrypted
-    db.commit()
-    request.session["user"] = {"email": email}
-    return RedirectResponse("/")
+    try:
+        print("=== OAuth2 Callback Start ===", flush=True)
+        sys.stdout.flush()
+        state = request.session.get("oauth_state")
+        print(f"Step 1: Got state from session: {state}", flush=True)
+
+        flow = auth.make_flow(request)
+        print("Step 2: Created OAuth flow", flush=True)
+
+        print(f"Step 3: Fetching token with URL: {request.url}", flush=True)
+        flow.fetch_token(authorization_response=str(request.url))
+        print("Step 4: Token fetched successfully", flush=True)
+
+        creds = flow.credentials
+        print(
+            f"Step 5: Got credentials, token exists: {bool(creds.token)}", flush=True)
+
+        # minimal userinfo: email from id_token if present
+        email = None
+        if creds.id_token:
+            import jwt
+            try:
+                info = jwt.decode(creds.id_token, options={
+                                  "verify_signature": False})
+                email = info.get("email")
+                print(f"Step 6: Decoded email from JWT: {email}", flush=True)
+            except Exception as e:
+                logger.error(f"JWT decode failed: {e}")
+                print(f"Step 6 ERROR: JWT decode failed: {e}", flush=True)
+                email = None
+        if not email:
+            email = "unknown"
+            print("Step 7: No email found, using 'unknown'", flush=True)
+
+        print("Step 8: Encrypting tokens...", flush=True)
+        encrypted = auth.encrypt_tokens({
+            "token": creds.token,
+            "refresh_token": creds.refresh_token,
+            "id_token": creds.id_token,
+        })
+        print("Step 9: Tokens encrypted successfully", flush=True)
+
+        # upsert user
+        print(f"Step 10: Querying for user with email: {email}", flush=True)
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            print("Step 11: Creating new user", flush=True)
+            user = User(email=email, encrypted_tokens=encrypted)
+            db.add(user)
+        else:
+            print("Step 12: Updating existing user", flush=True)
+            user.encrypted_tokens = encrypted
+
+        print("Step 13: Committing to database...", flush=True)
+        db.commit()
+        print("Step 14: Database commit successful", flush=True)
+
+        request.session["user"] = {"email": email}
+        print("Step 15: Session updated, redirecting to /", flush=True)
+        return RedirectResponse("/")
+    except Exception as e:
+        logger.error(f"OAuth2 callback failed: {e}", exc_info=True)
+        print(f"=== EXCEPTION in OAuth2 Callback: {e} ===", flush=True)
+        import traceback
+        tb = traceback.format_exc()
+        print(tb, flush=True)
+        return HTMLResponse(
+            f"<h2>Internal Server Error</h2>"
+            f"<h3>Error: {e}</h3>"
+            f"<pre>{tb}</pre>",
+            status_code=500
+        )
 
 
 @app.get("/logout")
@@ -96,12 +151,14 @@ def subscriptions(request: Request, db: Session = Depends(get_db)):
     user_sess = request.session.get("user")
     if not user_sess:
         return RedirectResponse("/login")
-    # load detected subscription groups from DB
+    # load detected subscription groups from DB (exclude already unsubscribed)
     user = db.query(User).filter(User.email == user_sess.get("email")).first()
     groups = []
     if user:
-        groups = db.query(SubscriptionGroup).filter(SubscriptionGroup.user_id == user.id).order_by(
-            SubscriptionGroup.confidence_score.desc()).all()
+        groups = db.query(SubscriptionGroup).filter(
+            SubscriptionGroup.user_id == user.id,
+            SubscriptionGroup.unsubscribed == 0
+        ).order_by(SubscriptionGroup.confidence_score.desc()).all()
     return templates.TemplateResponse("subscriptions.html", {"request": request, "groups": groups})
 
 

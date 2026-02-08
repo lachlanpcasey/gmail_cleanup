@@ -6,6 +6,7 @@ from googleapiclient.errors import HttpError
 from sqlalchemy.exc import OperationalError
 from .db import SessionLocal
 from .models import User
+from .gmail_client import build_gmail_service
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +62,21 @@ async def _execute_with_service(service, group_domain: str, methods: dict):
         try:
             from email.mime.text import MIMEText
             import base64
+            from urllib.parse import urlparse, parse_qs
+
+            # Parse mailto URL properly
+            parsed = urlparse(m)
+            to_addr = parsed.path
+
+            # Extract subject from query params if present
+            query_params = parse_qs(parsed.query)
+            subject = query_params.get('subject', ['Unsubscribe'])[0]
+
             msg = MIMEText("Please unsubscribe me from this mailing list.")
-            msg["To"] = m.replace("mailto:", "")
-            msg["Subject"] = "Unsubscribe"
+            msg["To"] = to_addr
+            msg["Subject"] = subject
+            msg["From"] = "me"
+
             raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
             body = {"raw": raw}
             try:
@@ -154,6 +167,25 @@ async def execute_unsubscribe_task(user_id: int, group_domain: str, methods: dic
         try:
             res = await _execute_with_service(service, group_domain, methods)
             logger.info("unsubscribe result for %s: %s", group_domain, res)
+
+            # Mark group as unsubscribed if any action succeeded
+            if res.get("actions"):
+                for action in res["actions"]:
+                    if action.get("ok"):
+                        # Find and mark the group as unsubscribed
+                        from .models import SubscriptionGroup
+                        group = db.query(SubscriptionGroup).filter(
+                            SubscriptionGroup.user_id == user_id,
+                            SubscriptionGroup.sender_domain == group_domain
+                        ).first()
+                        if group:
+                            group.unsubscribed = 1
+                            db.add(group)
+                            db.commit()
+                            logger.info(
+                                f"Marked {group_domain} as unsubscribed")
+                        break
+
             return {"ok": True, "result": res}
         except Exception as e:
             logger.exception(

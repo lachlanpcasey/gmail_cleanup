@@ -37,7 +37,7 @@ def compute_confidence(has_list_unsub: bool, heuristics_count: int):
     return min(100, base + heuristics_count * 15)
 
 
-def scan_user_mailbox(user_id: int):
+def scan_user_mailbox(user_id: int, max_messages: int = 1000):
     db: Session = SessionLocal()
     try:
         user = db.query(User).filter(User.id == user_id).first()
@@ -58,13 +58,31 @@ def scan_user_mailbox(user_id: int):
         groups = defaultdict(lambda: {"count": 0, "subjects": set(
         ), "sender_name": None, "has_list_unsub": False, "methods": []})
 
+        total_processed = 0
+        logger.info(
+            f"Starting mailbox scan for user {user_id}, max messages: {max_messages}")
+
         # Paginate messages to limit work per run
-        while True:
+        while total_processed < max_messages:
             resp = execute_request(lambda: service.users().messages().list(
                 userId="me", q="in:anywhere", pageToken=page_token, maxResults=200).execute())
             msgs = resp.get("messages", [])
+
+            if not msgs:
+                logger.info(
+                    f"No more messages to process. Total processed: {total_processed}")
+                break
+
             for m in msgs:
+                if total_processed >= max_messages:
+                    logger.info(f"Reached max messages limit: {max_messages}")
+                    break
+
                 try:
+                    total_processed += 1
+                    if total_processed % 100 == 0:
+                        logger.info(f"Processed {total_processed} messages...")
+
                     msg = execute_request(lambda: service.users().messages().get(userId="me", id=m["id"], format="metadata", metadataHeaders=[
                                           "From", "Subject", "List-Unsubscribe", "Precedence", "Auto-Submitted"]).execute())
                     headers = msg.get("payload", {}).get("headers", [])
@@ -126,8 +144,11 @@ def scan_user_mailbox(user_id: int):
                     continue
 
             page_token = resp.get("nextPageToken")
-            if not page_token:
+            if not page_token or total_processed >= max_messages:
                 break
+
+        logger.info(
+            f"Scan complete. Processed {total_processed} messages, found {len(groups)} potential subscription senders")
 
         # finalize groups into DB: update frequency/confidence
         for domain, d in groups.items():

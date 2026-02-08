@@ -15,8 +15,11 @@ if not _FERNET_KEY:
 fernet = Fernet(_FERNET_KEY.encode())
 
 SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/gmail.settings.basic",
 ]
 
 
@@ -48,6 +51,9 @@ def make_flow(request: Request):
 
 
 def credentials_from_tokens(token_dict: dict) -> Credentials:
+    if not token_dict.get("refresh_token"):
+        raise RuntimeError(
+            "No refresh token available. Please logout and login again to grant fresh credentials.")
     return Credentials(
         token=token_dict.get("token"),
         refresh_token=token_dict.get("refresh_token"),

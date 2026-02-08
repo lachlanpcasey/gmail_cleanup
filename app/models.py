@@ -21,6 +21,7 @@ class SubscriptionGroup(Base):
     frequency_score = Column(Integer, default=0)
     confidence_score = Column(Integer, default=0)
     example_subjects = Column(JSON)
+    unsubscribed = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
