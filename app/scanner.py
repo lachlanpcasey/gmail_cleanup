@@ -120,15 +120,17 @@ def scan_user_mailbox(user_id: int, max_messages: int = 500):
         batch_count = 0
         while total_processed < max_messages:
             batch_count += 1
-            logger.info(f"=== BATCH {batch_count} === total_processed={total_processed}, max={max_messages}, has_page_token={page_token is not None}")
-            
+            logger.info(
+                f"=== BATCH {batch_count} === total_processed={total_processed}, max={max_messages}, has_page_token={page_token is not None}")
+
             resp = execute_request(lambda: service.users().messages().list(
                 userId="me", q=query, pageToken=page_token, maxResults=200).execute())
             msgs = resp.get("messages", [])
             next_page_token = resp.get("nextPageToken")
             result_size_estimate = resp.get("resultSizeEstimate", "unknown")
-            
-            logger.info(f"API Response: messages_returned={len(msgs)}, has_next_page={next_page_token is not None}, result_size_estimate={result_size_estimate}")
+
+            logger.info(
+                f"API Response: messages_returned={len(msgs)}, has_next_page={next_page_token is not None}, result_size_estimate={result_size_estimate}")
 
             if not msgs:
                 logger.info(
@@ -232,14 +234,16 @@ def scan_user_mailbox(user_id: int, max_messages: int = 500):
                     continue
 
             page_token = next_page_token
-            logger.info(f"End of batch {batch_count}: next_page_token={'EXISTS' if page_token else 'NONE'}, total_processed={total_processed}")
-            
+            logger.info(
+                f"End of batch {batch_count}: next_page_token={'EXISTS' if page_token else 'NONE'}, total_processed={total_processed}")
+
             if not page_token:
                 logger.info("No more pages available - ending scan")
                 break
-            
+
             if total_processed >= max_messages:
-                logger.info(f"Reached max_messages limit ({max_messages}) - ending scan")
+                logger.info(
+                    f"Reached max_messages limit ({max_messages}) - ending scan")
                 break
 
         logger.info(
