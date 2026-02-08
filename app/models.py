@@ -25,6 +25,7 @@ class ScanProgress(Base):
                         server_default=func.now(), onupdate=func.now())
     new_subscriptions_found = Column(Integer, default=0, server_default="0")
     total_messages_scanned = Column(Integer, default=0, server_default="0")
+    page_token = Column(String, nullable=True)  # Track pagination position
 
 
 class SubscriptionGroup(Base):

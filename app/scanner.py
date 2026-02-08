@@ -61,15 +61,10 @@ def scan_user_mailbox(user_id: int, max_messages: int = 500):
             return
 
         # Build query to scan emails
-        # Use empty query or broad search - Gmail will search all mail by default
+        # Don't use date filtering - rely on thread ID tracking to skip processed emails
         query = ""
-        if user.last_scan_date:
-            # Format date for Gmail query: YYYY/MM/DD
-            scan_date_str = user.last_scan_date.strftime("%Y/%m/%d")
-            query = f"after:{scan_date_str}"
-            logger.info(f"Scanning emails after {scan_date_str}")
-        else:
-            logger.info("First scan - scanning all emails")
+        logger.info(
+            "Scanning emails (thread ID tracking will skip already processed emails)")
 
         # Initialize or update scan progress
         scan_progress = db.query(ScanProgress).filter(
@@ -77,9 +72,10 @@ def scan_user_mailbox(user_id: int, max_messages: int = 500):
         if not scan_progress:
             scan_progress = ScanProgress(user_id=user_id, current_message=0,
                                          estimated_total=max_messages, is_scanning=True, started_at=datetime.utcnow(),
-                                         new_subscriptions_found=0, total_messages_scanned=0)
+                                         new_subscriptions_found=0, total_messages_scanned=0, page_token=None)
             db.add(scan_progress)
         else:
+            # Don't reset page_token - resume from where we left off
             scan_progress.current_message = 0
             scan_progress.estimated_total = max_messages
             scan_progress.is_scanning = True
@@ -87,6 +83,13 @@ def scan_user_mailbox(user_id: int, max_messages: int = 500):
             scan_progress.new_subscriptions_found = 0
             scan_progress.total_messages_scanned = 0
         db.commit()
+
+        # Resume from saved page token if available
+        page_token = scan_progress.page_token
+        if page_token:
+            logger.info(f"Resuming scan from saved page token position")
+        else:
+            logger.info(f"Starting scan from beginning of mailbox")
 
         tokens = {}
         if user.encrypted_tokens:
@@ -106,15 +109,26 @@ def scan_user_mailbox(user_id: int, max_messages: int = 500):
         logger.info(
             f"Skipping {len(skip_domains)} already processed domains during scan")
 
-        page_token = None
-        processed_threads = set()
+        # Load all thread IDs that have already been processed from previous scans
+        existing_threads = db.query(SubscriptionMessage.gmail_thread_id).join(
+            SubscriptionGroup, SubscriptionMessage.group_id == SubscriptionGroup.id
+        ).filter(
+            SubscriptionGroup.user_id == user.id
+        ).all()
+        processed_threads = {t[0] for t in existing_threads if t[0]}
+        logger.info(
+            f"Loaded {len(processed_threads)} previously processed thread IDs to skip during scan")
+
         groups = defaultdict(lambda: {"count": 0, "subjects": set(
         ), "sender_name": None, "has_list_unsub": False, "methods": []})
 
         total_processed = 0
+        new_threads_processed = 0  # Track how many NEW threads we actually process
         new_subscriptions_found = 0
         logger.info(
             f"Starting mailbox scan for user {user_id}, max messages: {max_messages}")
+        logger.info(
+            f"Will skip {len(processed_threads)} already-processed threads")
 
         # Paginate messages to limit work per run
         batch_count = 0
@@ -124,7 +138,7 @@ def scan_user_mailbox(user_id: int, max_messages: int = 500):
                 f"=== BATCH {batch_count} === total_processed={total_processed}, max={max_messages}, has_page_token={page_token is not None}")
 
             resp = execute_request(lambda: service.users().messages().list(
-                userId="me", q=query, pageToken=page_token, maxResults=200).execute())
+                userId="me", q=query, pageToken=page_token, maxResults=500).execute())
             msgs = resp.get("messages", [])
             next_page_token = resp.get("nextPageToken")
             result_size_estimate = resp.get("resultSizeEstimate", "unknown")
@@ -151,6 +165,12 @@ def scan_user_mailbox(user_id: int, max_messages: int = 500):
                         scan_progress.current_message = total_processed
                         db.commit()
 
+                    # Check thread ID BEFORE fetching full message (major optimization!)
+                    thread_id = m.get("threadId")
+                    if thread_id in processed_threads:
+                        continue
+
+                    # Now fetch full message details only for new threads
                     msg = execute_request(lambda: service.users().messages().get(userId="me", id=m["id"], format="metadata", metadataHeaders=[
                                           "From", "Subject", "List-Unsubscribe", "Precedence", "Auto-Submitted"]).execute())
                     headers = msg.get("payload", {}).get("headers", [])
@@ -173,10 +193,9 @@ def scan_user_mailbox(user_id: int, max_messages: int = 500):
                     if domain in skip_domains:
                         continue
 
-                    thread_id = msg.get("threadId")
-                    if thread_id in processed_threads:
-                        continue
+                    # Mark this thread as processed
                     processed_threads.add(thread_id)
+                    new_threads_processed += 1  # Count this as a new thread
 
                     methods = parse_list_unsubscribe(headers)
                     has_list_unsub = bool(methods.get(
@@ -235,10 +254,11 @@ def scan_user_mailbox(user_id: int, max_messages: int = 500):
 
             page_token = next_page_token
             logger.info(
-                f"End of batch {batch_count}: next_page_token={'EXISTS' if page_token else 'NONE'}, total_processed={total_processed}")
+                f"End of batch {batch_count}: next_page_token={'EXISTS' if page_token else 'NONE'}, total_processed={total_processed}, new_threads={new_threads_processed}")
 
             if not page_token:
-                logger.info("No more pages available - ending scan")
+                logger.info(
+                    "No more pages available - reached end of mailbox!")
                 break
 
             if total_processed >= max_messages:
@@ -278,8 +298,12 @@ def scan_user_mailbox(user_id: int, max_messages: int = 500):
             db.add(sgroup)
         db.commit()
 
-        # Update last scan date to current time
+        # Update last scan date to current time to track when we last scanned
         user.last_scan_date = datetime.utcnow()
+        logger.info(
+            f"Scan complete: processed {new_threads_processed} new threads out of {total_processed} messages checked")
+        if new_threads_processed == 0:
+            logger.info("No new threads found - all emails have been scanned!")
         db.commit()
 
         # Mark scan as complete and save results
@@ -287,6 +311,14 @@ def scan_user_mailbox(user_id: int, max_messages: int = 500):
         scan_progress.current_message = total_processed
         scan_progress.total_messages_scanned = total_processed
         scan_progress.new_subscriptions_found = new_subscriptions_found
+        # Save the page token to resume from this position next time
+        scan_progress.page_token = page_token
+        if not page_token:
+            logger.info(
+                "Reached end of mailbox - next scan will start from beginning")
+        else:
+            logger.info(
+                "Saved pagination position - next scan will resume from here")
         db.commit()
 
         return {"total_processed": total_processed, "new_subscriptions": new_subscriptions_found}
