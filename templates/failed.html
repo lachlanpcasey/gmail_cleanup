@@ -1,0 +1,360 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Failed Unsubscribes</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+          Cantarell, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+        color: #333;
+      }
+
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        padding: 40px;
+      }
+
+      h1 {
+        color: #dc3545;
+        font-size: 2.5em;
+        margin-bottom: 10px;
+        text-align: center;
+      }
+
+      .subtitle {
+        text-align: center;
+        color: #6c757d;
+        margin-bottom: 30px;
+        font-size: 0.95em;
+      }
+
+      .subscription-card {
+        background: #f8f9fa;
+        border: 2px solid #dc3545;
+        border-radius: 12px;
+        padding: 16px 20px;
+        margin-bottom: 12px;
+        transition: all 0.3s ease;
+      }
+
+      .subscription-card:hover {
+        border-color: #c82333;
+        box-shadow: 0 4px 12px rgba(220, 53, 69, 0.2);
+      }
+
+      .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+      }
+
+      .subscription-name {
+        font-size: 1.1em;
+        font-weight: 600;
+        color: #2d3748;
+        flex: 1;
+      }
+
+      .toggle-icon {
+        font-size: 1.2em;
+        color: #6c757d;
+        transition: transform 0.3s ease;
+        user-select: none;
+      }
+
+      .toggle-icon.expanded {
+        transform: rotate(180deg);
+      }
+
+      .card-details {
+        display: none;
+        margin-top: 15px;
+        padding-top: 15px;
+        border-top: 1px solid #dee2e6;
+      }
+
+      .card-details.show {
+        display: block;
+      }
+
+      .subscription-meta {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        font-size: 0.9em;
+        color: #6c757d;
+        margin-bottom: 12px;
+      }
+
+      .meta-item {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .examples {
+        font-size: 0.9em;
+        color: #495057;
+        margin-bottom: 12px;
+      }
+
+      .example-subject {
+        background: #e9ecef;
+        padding: 4px 8px;
+        border-radius: 4px;
+        margin: 4px 4px 4px 0;
+        display: inline-block;
+      }
+
+      .view-urls-btn {
+        background: #dc3545;
+        color: white;
+        padding: 8px 16px;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.9em;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+
+      .view-urls-btn:hover {
+        background: #c82333;
+        transform: translateY(-1px);
+      }
+
+      .back-link {
+        display: inline-block;
+        margin-top: 30px;
+        color: #667eea;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.3s ease;
+      }
+
+      .back-link:hover {
+        color: #764ba2;
+        transform: translateX(-5px);
+      }
+
+      .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #6c757d;
+        font-size: 1.2em;
+      }
+
+      /* Modal styles */
+      .modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.6);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+      }
+
+      .modal {
+        background: white;
+        border-radius: 16px;
+        padding: 30px;
+        max-width: 500px;
+        width: 90%;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+      }
+
+      .modal-title {
+        font-size: 1.5em;
+        font-weight: 600;
+        color: #2d3748;
+        margin-bottom: 15px;
+      }
+
+      .modal-content {
+        color: #495057;
+        margin-bottom: 20px;
+        line-height: 1.6;
+      }
+
+      .modal-buttons {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+      }
+
+      .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+
+      .btn-secondary {
+        background: #6c757d;
+        color: white;
+      }
+
+      .btn-secondary:hover {
+        background: #545b62;
+      }
+
+      .url-list {
+        list-style: none;
+        padding: 0;
+        margin-top: 10px;
+      }
+
+      .url-list li {
+        background: #f8f9fa;
+        padding: 8px 12px;
+        margin: 5px 0;
+        border-radius: 6px;
+        word-break: break-all;
+        font-size: 0.85em;
+        color: #495057;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>⚠️ Failed Unsubscribes</h1>
+      <p class="subtitle">👆 Click on any sender to expand details</p>
+
+      {% if failed_groups %}
+      <div style="margin-bottom: 20px">
+        {% for g in failed_groups %}
+        <div class="subscription-card" id="card-{{ loop.index }}">
+          <div class="card-header" onclick="toggleCard({{ loop.index }})">
+            <div class="subscription-name">
+              {{ g.sender_name or g.sender_domain }}
+            </div>
+            <div class="toggle-icon" id="icon-{{ loop.index }}">▼</div>
+          </div>
+          <div class="card-details" id="details-{{ loop.index }}">
+            <div class="subscription-meta">
+              <div class="meta-item">📧 {{ g.sender_domain }}</div>
+              <div class="meta-item">📬 {{ g.frequency_score }} emails</div>
+            </div>
+            {% if g.example_subjects %}
+            <div class="examples">
+              <strong>Example subjects:</strong><br />
+              {% for subj in g.example_subjects[:3] %}
+              <span class="example-subject">{{ subj }}</span>
+              {% endfor %}
+            </div>
+            {% endif %}
+            <button
+              class="view-urls-btn"
+              onclick="showFailedDetails('{{ g.sender_domain }}', '{{ g.sender_name }}'); event.stopPropagation();"
+            >
+              🔗 View Unsubscribe URLs
+            </button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p>✅ No failed unsubscribe attempts!</p>
+      </div>
+      {% endif %}
+
+      <div style="text-align: center">
+        <a href="/" class="back-link">← Back to Home</a>
+      </div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal-overlay" id="modalOverlay" onclick="closeModal()">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-title" id="modalTitle"></div>
+        <div class="modal-content" id="modalContent"></div>
+        <div class="modal-buttons">
+          <button class="btn btn-secondary" onclick="closeModal()">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function toggleCard(index) {
+        const details = document.getElementById("details-" + index);
+        const icon = document.getElementById("icon-" + index);
+
+        if (details.classList.contains("show")) {
+          details.classList.remove("show");
+          icon.classList.remove("expanded");
+        } else {
+          details.classList.add("show");
+          icon.classList.add("expanded");
+        }
+      }
+
+      async function showFailedDetails(domain, senderName) {
+        try {
+          const resp = await fetch(
+            "/subscription_details?domain=" + encodeURIComponent(domain),
+          );
+          const data = await resp.json();
+
+          if (data.ok) {
+            const urls = data.unsubscribe_urls || [];
+            let urlsHtml = "";
+            if (urls.length > 0) {
+              urlsHtml =
+                '<p style="margin-top: 15px;"><strong>Unsubscribe URLs that failed:</strong></p><ul class="url-list">';
+              urls.forEach((url) => {
+                urlsHtml += `<li>${url}</li>`;
+              });
+              urlsHtml += "</ul>";
+            }
+
+            showModal(
+              `⚠️ ${senderName || domain}`,
+              `<p><strong>Domain:</strong> ${domain}</p>
+               <p><strong>Email Count:</strong> ${data.frequency_score || 0}</p>
+               ${urlsHtml}
+               <p style="margin-top: 15px;"><em>These unsubscribe links failed. You may need to manually unsubscribe.</em></p>`,
+            );
+          }
+        } catch (err) {
+          console.error("Error fetching details:", err);
+        }
+      }
+
+      function showModal(title, content) {
+        document.getElementById("modalTitle").textContent = title;
+        document.getElementById("modalContent").innerHTML = content;
+        document.getElementById("modalOverlay").style.display = "flex";
+      }
+
+      function closeModal() {
+        document.getElementById("modalOverlay").style.display = "none";
+      }
+    </script>
+  </body>
+</html>

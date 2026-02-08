@@ -37,16 +37,11 @@ async def try_https_unsubscribe(url: str, timeout=10):
         return {"ok": False, "reason": "network", "error": str(e)}
 
 
-def format_mailto_unsubscribe(mailto: str) -> dict:
-    # mailto:unsubscribe@example.com?subject=unsubscribe
-    return {"mailto": mailto}
-
-
 async def _execute_with_service(service, group_domain: str, methods: dict):
     """Core execution given a built Gmail `service` object."""
     results = {"domain": group_domain, "actions": []}
 
-    # Prefer HTTPS endpoints
+    # Try HTTPS endpoints
     for url in methods.get("https", []):
         if not is_safe_https_url(url):
             results["actions"].append(
@@ -57,69 +52,13 @@ async def _execute_with_service(service, group_domain: str, methods: dict):
         if res.get("ok"):
             return results
 
-    # Next, mailto addresses (may require send scope)
-    for m in methods.get("mailto", []):
-        try:
-            from email.mime.text import MIMEText
-            import base64
-            from urllib.parse import urlparse, parse_qs
-
-            # Parse mailto URL properly
-            parsed = urlparse(m)
-            to_addr = parsed.path
-
-            # Extract subject from query params if present
-            query_params = parse_qs(parsed.query)
-            subject = query_params.get('subject', ['Unsubscribe'])[0]
-
-            msg = MIMEText("Please unsubscribe me from this mailing list.")
-            msg["To"] = to_addr
-            msg["Subject"] = subject
-            msg["From"] = "me"
-
-            raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-            body = {"raw": raw}
-            try:
-                from .gmail_client import execute_request
-                send_resp = execute_request(lambda: service.users(
-                ).messages().send(userId="me", body=body).execute())
-                results["actions"].append(
-                    {"method": "mailto", "mailto": m, "ok": True, "sendResponseId": send_resp.get("id")})
-                return results
-            except HttpError as he:
-                status = None
-                try:
-                    status = int(getattr(he, 'resp', None).status)
-                except Exception:
-                    status = int(getattr(he, 'status_code', 0) or 0)
-                results["actions"].append(
-                    {"method": "mailto", "mailto": m, "ok": False, "reason": f"google_api_error_{status}"})
-        except Exception as e:
-            results["actions"].append(
-                {"method": "mailto", "mailto": m, "ok": False, "reason": str(e)})
-
-    # Fallback: create a Gmail filter to archive/delete future messages from this domain
-    try:
-        criteria = {"from": "@%s" % group_domain}
-        action = {"removeLabelIds": ["INBOX"], "addLabelIds": ["TRASH"]}
-        fb = {"criteria": criteria, "action": action}
-        try:
-            from .gmail_client import execute_request
-            fresp = execute_request(lambda: service.users().settings(
-            ).filters().create(userId="me", body=fb).execute())
-            results["actions"].append(
-                {"method": "filter_create", "ok": True, "filterId": fresp.get("id")})
-        except HttpError as he:
-            status = None
-            try:
-                status = int(getattr(he, 'resp', None).status)
-            except Exception:
-                status = int(getattr(he, 'status_code', 0) or 0)
-            results["actions"].append(
-                {"method": "filter_create", "ok": False, "reason": f"google_api_error_{status}"})
-    except Exception as e:
-        results["actions"].append(
-            {"method": "filter_create", "ok": False, "reason": str(e)})
+    # If no HTTPS methods succeeded or were available, return failed result
+    if not results["actions"] or not any(a.get("ok") for a in results["actions"]):
+        results["actions"].append({
+            "method": "none",
+            "ok": False,
+            "reason": "no_valid_unsubscribe_method"
+        })
 
     return results
 
@@ -168,23 +107,35 @@ async def execute_unsubscribe_task(user_id: int, group_domain: str, methods: dic
             res = await _execute_with_service(service, group_domain, methods)
             logger.info("unsubscribe result for %s: %s", group_domain, res)
 
-            # Mark group as unsubscribed if any action succeeded
+            # Find the subscription group
+            from .models import SubscriptionGroup
+            group = db.query(SubscriptionGroup).filter(
+                SubscriptionGroup.user_id == user_id,
+                SubscriptionGroup.sender_domain == group_domain
+            ).first()
+
+            # Check if any action succeeded
+            success = False
             if res.get("actions"):
                 for action in res["actions"]:
                     if action.get("ok"):
-                        # Find and mark the group as unsubscribed
-                        from .models import SubscriptionGroup
-                        group = db.query(SubscriptionGroup).filter(
-                            SubscriptionGroup.user_id == user_id,
-                            SubscriptionGroup.sender_domain == group_domain
-                        ).first()
-                        if group:
-                            group.unsubscribed = 1
-                            db.add(group)
-                            db.commit()
-                            logger.info(
-                                f"Marked {group_domain} as unsubscribed")
+                        success = True
                         break
+
+            if group:
+                if success:
+                    # Mark as successfully unsubscribed
+                    group.unsubscribed = 1
+                    group.unsubscribe_failed = 0
+                    logger.info(f"Marked {group_domain} as unsubscribed")
+                else:
+                    # Mark as failed to unsubscribe
+                    group.unsubscribe_failed = 1
+                    logger.warning(
+                        f"Failed to unsubscribe from {group_domain}")
+
+                db.add(group)
+                db.commit()
 
             return {"ok": True, "result": res}
         except Exception as e:
