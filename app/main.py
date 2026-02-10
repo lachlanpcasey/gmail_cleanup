@@ -7,7 +7,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 from .db import init_db, SessionLocal
 from . import auth, gmail_client, unsubscribe, scanner
-from .models import User, SubscriptionGroup, SubscriptionMessage, ScanProgress
+from .models import User, SubscriptionGroup, SubscriptionMessage, ScanProgress, PromotionsDomain, PromotionsScanProgress
 from sqlalchemy.orm import Session
 import uvicorn
 import logging
@@ -15,6 +15,8 @@ import logging
 # Configure logging to print all logs to the console
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -78,13 +80,25 @@ def startup():
     # Reset any stale scanning states from interrupted scans
     db = SessionLocal()
     try:
+        # Reset subscription scans
         stale_scans = db.query(ScanProgress).filter(
             ScanProgress.is_scanning == True).all()
         if stale_scans:
             for scan in stale_scans:
                 scan.is_scanning = False
             db.commit()
-            logging.info(f"Reset {len(stale_scans)} stale scanning state(s)")
+            logging.info(
+                f"Reset {len(stale_scans)} stale subscription scanning state(s)")
+
+        # Reset promotions scans
+        stale_promo_scans = db.query(PromotionsScanProgress).filter(
+            PromotionsScanProgress.is_scanning == True).all()
+        if stale_promo_scans:
+            for scan in stale_promo_scans:
+                scan.is_scanning = False
+            db.commit()
+            logging.info(
+                f"Reset {len(stale_promo_scans)} stale promotions scanning state(s)")
     finally:
         db.close()
 
@@ -94,6 +108,7 @@ def index(request: Request, db: Session = Depends(get_db)):
     user = request.session.get("user")
     unsubscribed_count = 0
     failed_count = 0
+    emails_deleted = 0
     if user:
         db_user = db.query(User).filter(
             User.email == user.get("email")).first()
@@ -106,11 +121,13 @@ def index(request: Request, db: Session = Depends(get_db)):
                 SubscriptionGroup.user_id == db_user.id,
                 SubscriptionGroup.unsubscribe_failed == 1
             ).count()
+            emails_deleted = db_user.emails_deleted or 0
     return templates.TemplateResponse("index.html", {
         "request": request,
         "user": user,
         "unsubscribed_count": unsubscribed_count,
-        "failed_count": failed_count
+        "failed_count": failed_count,
+        "emails_deleted": emails_deleted
     })
 
 
@@ -490,6 +507,316 @@ def get_scan_progress(request: Request, db: Session = Depends(get_db)):
         "new_subscriptions": scan_progress.new_subscriptions_found or 0,
         "total_scanned": scan_progress.total_messages_scanned or 0
     }
+
+
+@app.get("/promotions", response_class=HTMLResponse)
+def promotions_page(request: Request, category: str = "promotions", db: Session = Depends(get_db)):
+    """Display emails by domain with mass deletion options for specified category."""
+    user_sess = request.session.get("user")
+    if not user_sess:
+        return RedirectResponse("/login")
+
+    user = db.query(User).filter(User.email == user_sess.get("email")).first()
+    domains = []
+    if user:
+        domains = db.query(PromotionsDomain).filter(
+            PromotionsDomain.user_id == user.id,
+            PromotionsDomain.category == category
+        ).order_by(PromotionsDomain.email_count.desc()).all()
+
+    return templates.TemplateResponse("promotions.html", {
+        "request": request,
+        "user": user_sess,
+        "domains": domains,
+        "category": category
+    })
+
+
+@app.post("/start_promotions_scan")
+def start_promotions_scan(request: Request, background: BackgroundTasks, category: str = "promotions", db: Session = Depends(get_db)):
+    """Start scanning email category for domain statistics."""
+    logging.info(
+        f"start_promotions_scan endpoint called for category: {category}")
+    user_sess = request.session.get("user")
+    if not user_sess:
+        logging.warning("start_promotions_scan: not_authenticated")
+        return {"ok": False, "error": "not_authenticated"}
+    user = db.query(User).filter(User.email == user_sess.get("email")).first()
+    if not user:
+        logging.warning("start_promotions_scan: user_not_found")
+        return {"ok": False, "error": "user_not_found"}
+
+    # Check if already scanning for this category
+    scan_progress = db.query(PromotionsScanProgress).filter(
+        PromotionsScanProgress.user_id == user.id,
+        PromotionsScanProgress.category == category
+    ).first()
+    if scan_progress and scan_progress.is_scanning:
+        logging.warning(
+            f"start_promotions_scan: scan_already_running for user {user.id}, category {category}")
+        return {"ok": False, "error": "scan_already_running"}
+
+    # Start scan in background
+    from . import promotions_scanner
+    logging.info(
+        f"Starting background task for user {user.id}, category {category}")
+    background.add_task(
+        promotions_scanner.scan_promotions_for_domains, user.id, 2000, category)
+    logging.info("Background task added successfully")
+    return {"ok": True, "message": "scan_started"}
+
+
+@app.get("/promotions_scan_progress")
+def get_promotions_scan_progress(request: Request, category: str = "promotions", db: Session = Depends(get_db)):
+    """Get progress of email category scan."""
+    user_sess = request.session.get("user")
+    if not user_sess:
+        return {"ok": False, "error": "not_authenticated"}
+    user = db.query(User).filter(User.email == user_sess.get("email")).first()
+    if not user:
+        return {"ok": False, "error": "user_not_found"}
+
+    scan_progress = db.query(PromotionsScanProgress).filter(
+        PromotionsScanProgress.user_id == user.id,
+        PromotionsScanProgress.category == category
+    ).first()
+
+    if not scan_progress:
+        return {
+            "ok": True,
+            "is_scanning": False,
+            "current": 0,
+            "total": 0,
+            "percent": 0
+        }
+
+    percent = 0
+    if scan_progress.estimated_total > 0:
+        percent = min(100, int((scan_progress.current_message /
+                      scan_progress.estimated_total) * 100))
+
+    return {
+        "ok": True,
+        "is_scanning": scan_progress.is_scanning,
+        "current": scan_progress.current_message,
+        "total": scan_progress.estimated_total,
+        "percent": percent,
+        "started_at": scan_progress.started_at.isoformat() if scan_progress.started_at else None
+    }
+
+
+@app.post("/reset_promotions_scan")
+def reset_promotions_scan(request: Request, db: Session = Depends(get_db)):
+    """Manually reset a stuck Promotions scan."""
+    user_sess = request.session.get("user")
+    if not user_sess:
+        return {"ok": False, "error": "not_authenticated"}
+    user = db.query(User).filter(User.email == user_sess.get("email")).first()
+    if not user:
+        return {"ok": False, "error": "user_not_found"}
+
+    scan_progress = db.query(PromotionsScanProgress).filter(
+        PromotionsScanProgress.user_id == user.id
+    ).first()
+
+    if scan_progress:
+        scan_progress.is_scanning = False
+        scan_progress.page_token = None
+        db.commit()
+        return {"ok": True, "message": "scan_reset"}
+
+    return {"ok": True, "message": "no_scan_to_reset"}
+
+
+@app.post("/delete_domain_emails")
+async def delete_domain_emails(request: Request, background: BackgroundTasks, db: Session = Depends(get_db)):
+    """Move all emails from a specific domain in a category to trash."""
+    data = await request.json()
+    domain = data.get("domain")
+    category = data.get("category", "promotions")
+
+    user_sess = request.session.get("user")
+    if not user_sess:
+        return {"ok": False, "error": "not_authenticated"}
+    user = db.query(User).filter(User.email == user_sess.get("email")).first()
+    if not user:
+        return {"ok": False, "error": "user_not_found"}
+
+    if not domain:
+        return {"ok": False, "error": "domain_required"}
+
+    # Verify this domain belongs to the user with the correct category
+    domain_record = db.query(PromotionsDomain).filter(
+        PromotionsDomain.user_id == user.id,
+        PromotionsDomain.domain == domain,
+        PromotionsDomain.category == category
+    ).first()
+
+    if not domain_record:
+        return {"ok": False, "error": "domain_not_found"}
+
+    # Map category to Gmail label
+    category_labels = {
+        "promotions": "CATEGORY_PROMOTIONS",
+        "social": "CATEGORY_SOCIAL",
+        "updates": "CATEGORY_UPDATES",
+        "inbox": "INBOX"
+    }
+    label_id = category_labels.get(category, "CATEGORY_PROMOTIONS")
+
+    # Test deletion permissions by attempting to delete a single message first
+    try:
+        from .auth import decrypt_tokens
+        tokens = decrypt_tokens(
+            user.encrypted_tokens) if user.encrypted_tokens else {}
+        service = gmail_client.build_gmail_service(tokens)
+
+        # Get one message to test delete permissions
+        query = f"from:@{domain}"
+        test_result = gmail_client.list_messages(
+            service,
+            q=query,
+            label_ids=[label_id],
+            max_results=1
+        )
+
+        messages = test_result.get("messages", [])
+        if messages:
+            # Try to trash this one message as a permission test
+            test_delete = gmail_client.batch_delete_messages(
+                service, [messages[0]["id"]])
+
+            if not test_delete.get("success"):
+                error_type = test_delete.get("error", "unknown")
+                if error_type == "insufficient_permissions":
+                    return {"ok": False, "error": "insufficient_permissions"}
+                return {"ok": False, "error": f"trash_test_failed: {error_type}"}
+
+        # Permission test passed, schedule the full trash operation in background
+        background.add_task(delete_promotions_by_domain_task,
+                            user.id, domain, category)
+        return {"ok": True, "message": "deletion_started", "domain": domain}
+
+    except Exception as e:
+        logger.error(f"Permission test failed for {domain}: {e}")
+        if "insufficient" in str(e).lower() and "permission" in str(e).lower():
+            return {"ok": False, "error": "insufficient_permissions"}
+        return {"ok": False, "error": f"permission_test_failed: {str(e)}"}
+
+
+def delete_promotions_by_domain_task(user_id: int, domain: str, category: str = "promotions"):
+    """Background task to move all emails from a specific domain/category to trash."""
+    db: Session = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            logger.error(f"User {user_id} not found")
+            return
+
+        # Build Gmail service
+        from .auth import decrypt_tokens
+        tokens = decrypt_tokens(
+            user.encrypted_tokens) if user.encrypted_tokens else {}
+        service = gmail_client.build_gmail_service(tokens)
+
+        # Map category to Gmail label
+        category_labels = {
+            "promotions": "CATEGORY_PROMOTIONS",
+            "social": "CATEGORY_SOCIAL",
+            "updates": "CATEGORY_UPDATES",
+            "inbox": "INBOX"
+        }
+        label_id = category_labels.get(category, "CATEGORY_PROMOTIONS")
+
+        # Search for all messages from this domain in the specified category
+        query = f"from:@{domain}"
+        logger.info(f"Searching for emails from {domain} in {category}")
+
+        message_ids = []
+        page_token = None
+
+        while True:
+            result = gmail_client.list_messages(
+                service,
+                q=query,
+                label_ids=[label_id],
+                page_token=page_token,
+                max_results=500
+            )
+
+            messages = result.get("messages", [])
+            if not messages:
+                break
+
+            message_ids.extend([msg["id"] for msg in messages])
+
+            page_token = result.get("nextPageToken")
+            if not page_token:
+                break
+
+        if message_ids:
+            logger.info(
+                f"Found {len(message_ids)} messages from {domain}, moving to trash...")
+            result = gmail_client.batch_delete_messages(service, message_ids)
+            logger.info(f"Trash result: {result}")
+
+            # Check for permission errors
+            if not result.get("success") and result.get("error") == "insufficient_permissions":
+                logger.error(
+                    f"Permission error trashing from {domain}: {result.get('message')}")
+                # Don���t delete the domain record if permissions failed
+                return
+
+            # Update domain record only if trashing was successful
+            if result.get("success"):
+                # Update user's emails_deleted counter
+                user.emails_deleted = (
+                    user.emails_deleted or 0) + len(message_ids)
+
+                domain_record = db.query(PromotionsDomain).filter(
+                    PromotionsDomain.user_id == user_id,
+                    PromotionsDomain.domain == domain,
+                    PromotionsDomain.category == category
+                ).first()
+                if domain_record:
+                    db.delete(domain_record)
+                db.commit()
+                logger.info(
+                    f"Updated user emails_deleted count: {user.emails_deleted}")
+        else:
+            logger.info(f"No messages found from {domain}")
+
+    except Exception as e:
+        logger.error(
+            f"Error moving emails from {domain} to trash: {e}", exc_info=True)
+    finally:
+        db.close()
+
+
+@app.post("/delete_all_promotions")
+async def delete_all_promotions(request: Request, background: BackgroundTasks, db: Session = Depends(get_db)):
+    """Move all emails from all scanned Promotions domains to trash."""
+    user_sess = request.session.get("user")
+    if not user_sess:
+        return {"ok": False, "error": "not_authenticated"}
+    user = db.query(User).filter(User.email == user_sess.get("email")).first()
+    if not user:
+        return {"ok": False, "error": "user_not_found"}
+
+    # Get all domains for this user
+    domains = db.query(PromotionsDomain).filter(
+        PromotionsDomain.user_id == user.id
+    ).all()
+
+    if not domains:
+        return {"ok": False, "error": "no_domains_found"}
+
+    # Schedule deletion for all domains
+    for domain_record in domains:
+        background.add_task(delete_promotions_by_domain_task,
+                            user.id, domain_record.domain)
+
+    return {"ok": True, "message": "deletion_started", "count": len(domains)}
 
 
 if __name__ == "__main__":

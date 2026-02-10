@@ -1,0 +1,866 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Email Cleanup - Gmail Cleanup</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+          Cantarell, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 15px;
+      }
+
+      .container {
+        max-width: 1400px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        padding: 20px 25px;
+      }
+
+      h1 {
+        color: #667eea;
+        font-size: 2em;
+        margin-bottom: 5px;
+      }
+
+      .subtitle {
+        color: #6c757d;
+        font-size: 0.95em;
+        margin-bottom: 15px;
+      }
+
+      .category-tabs {
+        display: flex;
+        gap: 5px;
+        margin-bottom: 15px;
+        border-bottom: 2px solid #e2e8f0;
+        padding-bottom: 0;
+      }
+
+      .tab-btn {
+        padding: 8px 16px;
+        border: none;
+        background: transparent;
+        color: #6c757d;
+        cursor: pointer;
+        font-size: 0.9em;
+        font-weight: 600;
+        border-bottom: 3px solid transparent;
+        transition: all 0.2s ease;
+        border-radius: 4px 4px 0 0;
+      }
+
+      .tab-btn:hover {
+        background: #f8f9fa;
+        color: #667eea;
+      }
+
+      .tab-btn.active {
+        color: #667eea;
+        border-bottom-color: #667eea;
+        background: #f0f4ff;
+      }
+
+      .header-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .btn {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.9em;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        text-decoration: none;
+        display: inline-block;
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+      }
+
+      .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+      }
+
+      .btn-secondary {
+        background: #e2e8f0;
+        color: #2d3748;
+      }
+
+      .btn-secondary:hover {
+        background: #cbd5e0;
+      }
+
+      .btn-danger {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+      }
+
+      .btn-danger:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+      }
+
+      .btn-danger:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .scan-progress {
+        background: #f8f9fa;
+        padding: 12px 15px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        display: none;
+      }
+
+      .scan-progress.active {
+        display: block;
+      }
+
+      .scan-progress h3 {
+        font-size: 1em;
+        margin-bottom: 6px;
+      }
+
+      .scan-progress p {
+        font-size: 0.9em;
+        margin-bottom: 6px;
+      }
+
+      .progress-bar {
+        width: 100%;
+        height: 24px;
+        background: #e2e8f0;
+        border-radius: 12px;
+        overflow: hidden;
+        margin-top: 8px;
+      }
+
+      .progress-fill {
+        height: 100%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        transition: width 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+      }
+
+      .domains-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
+        gap: 10px;
+        margin-bottom: 80px;
+      }
+
+      .domain-card {
+        background: #f8f9fa;
+        padding: 12px 15px;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        transition: all 0.2s ease;
+        display: flex;
+        gap: 12px;
+      }
+
+      .domain-card:hover {
+        border-color: #667eea;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
+      }
+
+      .domain-card input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        margin-top: 2px;
+        accent-color: #667eea;
+        flex-shrink: 0;
+      }
+
+      .domain-content {
+        flex: 1;
+      }
+
+      .sticky-button-bar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: white;
+        padding: 10px 15px;
+        box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+        z-index: 1000;
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        align-items: center;
+        flex-wrap: wrap;
+        border-top: 1px solid #e9ecef;
+      }
+
+      .sticky-button-bar button {
+        min-width: 150px;
+      }
+
+      .selection-counter {
+        font-weight: 600;
+        color: #667eea;
+        font-size: 0.9em;
+        padding: 6px 12px;
+        background: #f0f4ff;
+        border-radius: 6px;
+        margin-right: auto;
+      }
+
+      .domain-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .domain-info h3 {
+        color: #2d3748;
+        font-size: 1em;
+        margin-bottom: 2px;
+        line-height: 1.3;
+      }
+
+      .email-count {
+        font-size: 1.4em;
+        font-weight: bold;
+        color: #667eea;
+        line-height: 1;
+      }
+
+      .domain-sender {
+        color: #6c757d;
+        font-size: 0.85em;
+        line-height: 1.2;
+      }
+
+      .example-subjects {
+        margin-top: 15px;
+        padding-top: 15px;
+        border-top: 1px solid #e2e8f0;
+      }
+
+      .example-subjects h4 {
+        color: #4a5568;
+        font-size: 0.9em;
+        margin-bottom: 8px;
+      }
+
+      .subject-list {
+        list-style: none;
+        padding: 0;
+      }
+
+      .subject-list li {
+        color: #6c757d;
+        font-size: 0.85em;
+        padding: 4px 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .no-domains {
+        text-align: center;
+        padding: 40px 20px;
+        color: #6c757d;
+      }
+
+      .no-domains-icon {
+        font-size: 3em;
+        margin-bottom: 15px;
+      }
+
+      .alert {
+        padding: 10px 15px;
+        border-radius: 6px;
+        margin-bottom: 12px;
+        display: none;
+        font-size: 0.9em;
+      }
+
+      .alert.show {
+        display: block;
+      }
+
+      .alert-success {
+        background: #d1fae5;
+        color: #065f46;
+        border: 1px solid #6ee7b7;
+      }
+
+      .alert-error {
+        background: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fca5a5;
+      }
+
+      .last-scanned {
+        color: #9ca3af;
+        font-size: 0.75em;
+        margin-top: 4px;
+      }
+
+      @media (max-width: 768px) {
+        .container {
+          padding: 15px;
+        }
+
+        .domains-grid {
+          grid-template-columns: 1fr;
+        }
+
+        h1 {
+          font-size: 1.6em;
+        }
+
+        .header-actions {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .btn {
+          width: 100%;
+          text-align: center;
+        }
+
+        .sticky-button-bar {
+          flex-direction: column;
+          padding: 12px;
+        }
+
+        .selection-counter {
+          margin-right: 0;
+          width: 100%;
+          text-align: center;
+          margin-bottom: 8px;
+        }
+
+        .sticky-button-bar button {
+          width: 100%;
+          min-width: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>📧 Email Cleanup</h1>
+      <p class="subtitle">Manage and move emails to trash by domain</p>
+
+      <!-- Category Tabs -->
+      <div class="category-tabs">
+        <button
+          class="tab-btn {% if category == 'promotions' %}active{% endif %}"
+          onclick="switchCategory('promotions')"
+        >
+          🎁 Promotions
+        </button>
+        <button
+          class="tab-btn {% if category == 'social' %}active{% endif %}"
+          onclick="switchCategory('social')"
+        >
+          👥 Social
+        </button>
+        <button
+          class="tab-btn {% if category == 'updates' %}active{% endif %}"
+          onclick="switchCategory('updates')"
+        >
+          📰 Updates
+        </button>
+        <button
+          class="tab-btn {% if category == 'inbox' %}active{% endif %}"
+          onclick="switchCategory('inbox')"
+        >
+          📥 Inbox
+        </button>
+      </div>
+
+      <div class="header-actions">
+        <div>
+          <h2 id="categoryTitle" style="font-size: 1.3em; margin-bottom: 5px">
+            {% if category == 'promotions' %}Promotions {% elif category ==
+            'social' %}Social {% elif category == 'updates' %}Updates {% elif
+            category == 'inbox' %}Inbox {% endif %}
+          </h2>
+          <p style="color: #6c757d; font-size: 0.9em">
+            {% if category == 'promotions' %}Promotional {% elif category ==
+            'social' %}Social networking {% elif category == 'updates' %}Update
+            and newsletter {% elif category == 'inbox' %}Inbox {% endif %}
+            emails by domain
+          </p>
+        </div>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap">
+          <a href="/" class="btn btn-secondary">← Back to Home</a>
+          <button id="scanBtn" class="btn btn-primary" onclick="startScan()">
+            🔍 Scan {% if category == 'promotions' %}Promotions {% elif category
+            == 'social' %}Social {% elif category == 'updates' %}Updates {% elif
+            category == 'inbox' %}Inbox {% endif %}
+          </button>
+          <button
+            id="resetBtn"
+            class="btn btn-secondary"
+            onclick="resetScan()"
+            style="display: none"
+          >
+            🔄 Reset Scan
+          </button>
+        </div>
+      </div>
+
+      <div id="alert" class="alert"></div>
+
+      <div id="scanProgress" class="scan-progress">
+        <h3 id="scanningTitle">Scanning...</h3>
+        <p id="scanStatus">Starting scan...</p>
+        <div class="progress-bar">
+          <div id="progressFill" class="progress-fill" style="width: 0%">
+            0%
+          </div>
+        </div>
+      </div>
+
+      <form id="delete-form">
+        <div class="domains-grid" id="domainsGrid">
+          {% if domains %} {% for domain in domains %}
+          <div class="domain-card" data-domain="{{ domain.domain }}">
+            <input
+              type="checkbox"
+              name="domain_names"
+              value="{{ domain.domain }}"
+              data-count="{{ domain.email_count }}"
+            />
+            <div class="domain-content">
+              <div class="domain-header">
+                <div class="domain-info">
+                  <h3>{{ domain.domain }}</h3>
+                  {% if domain.sender_name %}
+                  <p class="domain-sender">{{ domain.sender_name }}</p>
+                  {% endif %}
+                </div>
+                <div style="text-align: center">
+                  <div class="email-count">{{ domain.email_count }}</div>
+                  <div style="color: #6c757d; font-size: 0.75em">emails</div>
+                </div>
+              </div>
+
+              {% if domain.last_scanned %}
+              <div class="last-scanned">
+                Last scanned: {{ domain.last_scanned.strftime('%Y-%m-%d %H:%M')
+                }}
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %} {% else %}
+          <div class="no-domains">
+            <div class="no-domains-icon">📭</div>
+            <h2>No Data Yet</h2>
+            <p>
+              Click the "Scan {% if category == 'promotions' %}Promotions {%
+              elif category == 'social' %}Social {% elif category == 'updates'
+              %}Updates {% elif category == 'inbox' %}Inbox {% endif %} " button
+              above to analyze your emails by domain.
+            </p>
+          </div>
+          {% endif %}
+        </div>
+      </form>
+
+      <!-- Sticky button bar at bottom -->
+      {% if domains %}
+      <div class="sticky-button-bar">
+        <div class="selection-counter" id="selectionCounter">
+          0 selected (0 emails)
+        </div>
+        <button type="button" class="btn btn-danger" onclick="deleteSelected()">
+          🗑️ Move to Trash
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          onclick="toggleSelectAll()"
+          id="selectAllBtn"
+        >
+          ☑️ Select All
+        </button>
+      </div>
+      {% endif %}
+    </div>
+
+    <script>
+      let scanInterval = null;
+
+      // Get current category from URL or default to promotions
+      function getCurrentCategory() {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get("category") || "promotions";
+      }
+
+      // Switch to a different category
+      function switchCategory(category) {
+        if (scanInterval) {
+          showAlert("Please wait for the current scan to complete", "error");
+          return;
+        }
+        window.location.href = `/promotions?category=${category}`;
+      }
+
+      // Get category display names
+      function getCategoryName() {
+        const category = getCurrentCategory();
+        const names = {
+          promotions: "Promotions",
+          social: "Social",
+          updates: "Updates",
+          inbox: "Inbox",
+        };
+        return names[category] || "Promotions";
+      }
+
+      // Update selection counter
+      function updateSelectionCounter() {
+        const form = document.getElementById("delete-form");
+        if (form) {
+          const checkboxes = Array.from(
+            form.querySelectorAll('input[name="domain_names"]:checked'),
+          );
+          const count = checkboxes.length;
+          const totalEmails = checkboxes.reduce(
+            (sum, cb) => sum + parseInt(cb.dataset.count || 0),
+            0,
+          );
+          const counter = document.getElementById("selectionCounter");
+          if (counter) {
+            counter.textContent =
+              count === 1
+                ? `1 selected (${totalEmails} email${totalEmails !== 1 ? "s" : ""})`
+                : `${count} selected (${totalEmails} emails)`;
+          }
+        }
+      }
+
+      // Add change listener to all checkboxes
+      document.addEventListener("DOMContentLoaded", function () {
+        const form = document.getElementById("delete-form");
+        if (form) {
+          form.addEventListener("change", updateSelectionCounter);
+        }
+      });
+
+      function showAlert(message, type) {
+        const alert = document.getElementById("alert");
+        alert.textContent = message;
+        alert.className = `alert alert-${type} show`;
+        setTimeout(() => {
+          alert.classList.remove("show");
+        }, 5000);
+      }
+
+      async function startScan() {
+        console.log("startScan called");
+        const category = getCurrentCategory();
+        const categoryName = getCategoryName();
+        const btn = document.getElementById("scanBtn");
+        btn.disabled = true;
+        btn.textContent = "⏳ Scanning...";
+        document.getElementById("resetBtn").style.display = "inline-block";
+        document.getElementById("scanningTitle").textContent =
+          `Scanning ${categoryName}...`;
+
+        try {
+          console.log(
+            `Sending POST to /start_promotions_scan with category: ${category}`,
+          );
+          const response = await fetch(
+            `/start_promotions_scan?category=${category}`,
+            {
+              method: "POST",
+            },
+          );
+          console.log("Response received:", response.status);
+          const data = await response.json();
+          console.log("Response data:", data);
+
+          if (data.ok) {
+            console.log("Scan started successfully, showing progress");
+            document.getElementById("scanProgress").classList.add("active");
+            pollScanProgress();
+          } else {
+            console.error("Scan failed:", data.error);
+            showAlert(
+              "Failed to start scan: " + (data.error || "Unknown error"),
+              "error",
+            );
+            btn.disabled = false;
+            btn.textContent = `🔍 Scan ${categoryName}`;
+            document.getElementById("resetBtn").style.display = "none";
+          }
+        } catch (err) {
+          console.error("Exception during startScan:", err);
+          showAlert("Error starting scan: " + err.message, "error");
+          btn.disabled = false;
+          btn.textContent = `🔍 Scan ${categoryName}`;
+          document.getElementById("resetBtn").style.display = "none";
+        }
+      }
+
+      async function resetScan() {
+        if (!confirm("Are you sure you want to reset the current scan?")) {
+          return;
+        }
+
+        try {
+          const response = await fetch("/reset_promotions_scan", {
+            method: "POST",
+          });
+          const data = await response.json();
+
+          if (data.ok) {
+            if (scanInterval) clearInterval(scanInterval);
+            document.getElementById("scanProgress").classList.remove("active");
+            document.getElementById("scanBtn").disabled = false;
+            document.getElementById("scanBtn").textContent =
+              "🔍 Scan Promotions";
+            document.getElementById("resetBtn").style.display = "none";
+            showAlert("Scan reset successfully", "success");
+          } else {
+            showAlert(
+              "Failed to reset scan: " + (data.error || "Unknown error"),
+              "error",
+            );
+          }
+        } catch (err) {
+          showAlert("Error resetting scan: " + err.message, "error");
+        }
+      }
+
+      async function pollScanProgress() {
+        console.log("pollScanProgress started");
+        const category = getCurrentCategory();
+        const categoryName = getCategoryName();
+        if (scanInterval) clearInterval(scanInterval);
+
+        scanInterval = setInterval(async () => {
+          try {
+            const response = await fetch(
+              `/promotions_scan_progress?category=${category}`,
+            );
+            const data = await response.json();
+            console.log("Scan progress:", data);
+
+            if (data.ok) {
+              const progressFill = document.getElementById("progressFill");
+              const scanStatus = document.getElementById("scanStatus");
+              const percent = data.percent || 0;
+
+              progressFill.style.width = percent + "%";
+              progressFill.textContent = percent + "%";
+              scanStatus.textContent = `Scanned ${data.current} of ${data.total} messages...`;
+
+              if (!data.is_scanning) {
+                console.log("Scan complete");
+                clearInterval(scanInterval);
+                scanInterval = null;
+                document
+                  .getElementById("scanProgress")
+                  .classList.remove("active");
+                document.getElementById("scanBtn").disabled = false;
+                document.getElementById("scanBtn").textContent =
+                  `🔍 Scan ${categoryName}`;
+                document.getElementById("resetBtn").style.display = "none";
+                showAlert("Scan complete! Reloading page...", "success");
+                setTimeout(() => location.reload(), 2000);
+              }
+            }
+          } catch (err) {
+            console.error("Error polling scan progress:", err);
+          }
+        }, 2000);
+      }
+
+      async function deleteSelected() {
+        const category = getCurrentCategory();
+        const form = document.getElementById("delete-form");
+        const checkboxes = Array.from(
+          form.querySelectorAll('input[name="domain_names"]:checked'),
+        );
+        const domains = checkboxes.map((cb) => cb.value);
+
+        if (!domains.length) {
+          showAlert("Please select at least one domain to delete.", "error");
+          return;
+        }
+
+        const totalEmails = checkboxes.reduce(
+          (sum, cb) => sum + parseInt(cb.dataset.count || 0),
+          0,
+        );
+
+        if (
+          !confirm(
+            `Are you sure you want to move emails from ${domains.length} domain(s) (${totalEmails} total emails) to trash?\n\nYou can recover them from Gmail's trash within 30 days.`,
+          )
+        ) {
+          return;
+        }
+
+        // Disable all checkboxes and button during deletion
+        checkboxes.forEach((cb) => (cb.disabled = true));
+        const deleteBtn = event.target;
+        const originalText = deleteBtn.textContent;
+        deleteBtn.disabled = true;
+        deleteBtn.textContent = "⏳ Moving to trash...";
+
+        let successCount = 0;
+        let failCount = 0;
+        let permissionError = false;
+
+        // Delete domains one by one
+        for (const domain of domains) {
+          try {
+            const response = await fetch("/delete_domain_emails", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ domain: domain, category: category }),
+            });
+            const data = await response.json();
+
+            if (data.ok) {
+              successCount++;
+              // Remove the card
+              const card = document.querySelector(`[data-domain="${domain}"]`);
+              if (card) {
+                card.style.opacity = "0";
+                card.style.transform = "scale(0.9)";
+                setTimeout(() => {
+                  card.remove();
+                  updateSelectionCounter();
+                }, 300);
+              }
+            } else {
+              failCount++;
+              console.error(`Failed to delete ${domain}:`, data.error);
+
+              // Check for permission errors
+              if (data.error === "insufficient_permissions") {
+                permissionError = true;
+              }
+            }
+          } catch (err) {
+            failCount++;
+            console.error(`Error deleting ${domain}:`, err);
+          }
+        }
+
+        // Show result message
+        if (permissionError) {
+          showAlert(
+            "⚠️ Unable to move emails to trash. Please log out and log back in to grant email management permissions.",
+            "error",
+          );
+        } else if (successCount > 0 && failCount === 0) {
+          showAlert(
+            `Started moving emails from ${successCount} domain(s) to trash. This may take a few moments.`,
+            "success",
+          );
+        } else if (successCount > 0 && failCount > 0) {
+          showAlert(
+            `Started moving emails for ${successCount} domain(s), but ${failCount} failed.`,
+            "error",
+          );
+        } else {
+          showAlert(
+            `Failed to move emails from all selected domains to trash.`,
+            "error",
+          );
+        }
+
+        // Re-enable button
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = originalText;
+
+        // Re-enable remaining checkboxes
+        form
+          .querySelectorAll('input[name="domain_names"]')
+          .forEach((cb) => (cb.disabled = false));
+      }
+
+      function toggleSelectAll() {
+        const form = document.getElementById("delete-form");
+        if (!form) return;
+
+        const checkboxes = Array.from(
+          form.querySelectorAll('input[name="domain_names"]'),
+        );
+
+        if (!checkboxes.length) return;
+
+        // Check if all are currently selected
+        const allChecked = checkboxes.every((cb) => cb.checked);
+
+        // Toggle: if all are checked, uncheck all; otherwise check all
+        checkboxes.forEach((cb) => {
+          cb.checked = !allChecked;
+        });
+
+        // Update the counter and button text
+        updateSelectionCounter();
+
+        const btn = document.getElementById("selectAllBtn");
+        if (btn) {
+          btn.textContent = allChecked ? "☑️ Select All" : "☐ Deselect All";
+        }
+      }
+
+      // Check for ongoing scan on page load
+      window.addEventListener("load", async () => {
+        try {
+          const response = await fetch("/promotions_scan_progress");
+          const data = await response.json();
+          if (data.ok && data.is_scanning) {
+            document.getElementById("scanProgress").classList.add("active");
+            document.getElementById("scanBtn").disabled = true;
+            document.getElementById("scanBtn").textContent = "⏳ Scanning...";
+            document.getElementById("resetBtn").style.display = "inline-block";
+            pollScanProgress();
+          }
+        } catch (err) {
+          console.error("Error checking scan status:", err);
+        }
+      });
+    </script>
+  </body>
+</html>

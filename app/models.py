@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, JSON, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Text, JSON, Boolean, UniqueConstraint
 from sqlalchemy.sql import func
 from .db import Base
 
@@ -10,6 +10,7 @@ class User(Base):
     encrypted_tokens = Column(Text, nullable=True)
     last_history_id = Column(String, nullable=True)
     last_scan_date = Column(DateTime(timezone=True), nullable=True)
+    emails_deleted = Column(Integer, default=0, server_default="0")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -52,3 +53,35 @@ class SubscriptionMessage(Base):
     unsubscribe_methods = Column(JSON)
     detected_headers = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class PromotionsDomain(Base):
+    __tablename__ = "promotions_domains"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True, nullable=False)
+    domain = Column(String, index=True, nullable=False)
+    category = Column(String, index=True, default="promotions",
+                      server_default="promotions")
+    email_count = Column(Integer, default=0, server_default="0")
+    sender_name = Column(String)
+    example_subjects = Column(JSON)
+    last_scanned = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class PromotionsScanProgress(Base):
+    __tablename__ = "promotions_scan_progress"
+    __table_args__ = (
+        UniqueConstraint('user_id', 'category', name='uix_user_category'),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True, nullable=False)
+    category = Column(String, index=True, default="promotions",
+                      server_default="promotions")
+    current_message = Column(Integer, default=0, server_default="0")
+    estimated_total = Column(Integer, default=0, server_default="0")
+    is_scanning = Column(Boolean, default=False, server_default="0")
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True),
+                        server_default=func.now(), onupdate=func.now())
+    page_token = Column(String, nullable=True)
